@@ -10,6 +10,7 @@ const HOME = process.env.HOME || "/tmp"
 const CONFIG_DIR = path.join(HOME, ".config", "opencode")
 const CONFIG_PATH = path.join(CONFIG_DIR, "opencode.json")
 const BACKUP_DIR = path.join(CONFIG_DIR, ".config-history")
+const TRACKED = path.join(BACKUP_DIR, "config.json")
 const VALIDATION_LOG = path.join(BACKUP_DIR, "validation-errors.log")
 const SCHEMA_URL = "https://opencode.ai/config.json"
 const MODEL_SCHEMA_URL = "https://models.dev/model-schema.json"
@@ -44,12 +45,16 @@ const createValidator = (schema: unknown, modelSchema: unknown): Validator => {
   }
 }
 
+// Copy config to a single tracked file. Git stores history via commits —
+// no timestamped copies, no unbounded file growth.
+// stderr is redirected to /dev/null to avoid polluting the TUI.
 const snapshot = async () => {
-  const stamp = ts()
-  const dest = path.join(BACKUP_DIR, `${stamp}.json`)
-  await Bun.write(dest, Bun.file(CONFIG_PATH))
-  await Bun.$`git -C ${BACKUP_DIR} add .`.nothrow()
-  await Bun.$`git -C ${BACKUP_DIR} commit -m ${`config ${stamp}`}`.nothrow()
+  await Bun.write(TRACKED, Bun.file(CONFIG_PATH))
+  await Bun.$`git -C ${BACKUP_DIR} add config.json`.nothrow().quiet()
+  const diff = await Bun.$`git -C ${BACKUP_DIR} diff --cached --quiet`.nothrow().quiet()
+  if (diff.exitCode !== 0) {
+    await Bun.$`git -C ${BACKUP_DIR} commit -m ${`config ${ts()}`}`.nothrow().quiet()
+  }
 }
 
 const runValidation = async (validate: Validator | undefined) => {
@@ -110,12 +115,12 @@ const tui: TuiPlugin = async (api) => {
 
 const effect = (ctx: PluginContext): Effect.Effect<void, never, Scope.Scope> =>
   Effect.gen(function* () {
-    yield* Effect.promise(() => Bun.$`mkdir -p ${BACKUP_DIR}`.nothrow())
-    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} init`.nothrow())
-    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} config user.email opencode-config@local`.nothrow())
-    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} config user.name opencode-config`.nothrow())
-    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} add -A`.nothrow())
-    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} commit -m init`.nothrow())
+    yield* Effect.promise(() => Bun.$`mkdir -p ${BACKUP_DIR}`.nothrow().quiet())
+    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} init`.nothrow().quiet())
+    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} config user.email opencode-config@local`.nothrow().quiet())
+    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} config user.name opencode-config`.nothrow().quiet())
+    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} add -A`.nothrow().quiet())
+    yield* Effect.promise(() => Bun.$`git -C ${BACKUP_DIR} commit -m init`.nothrow().quiet())
     yield* Effect.promise(() => snapshot())
 
     try { fs.writeFileSync(VALIDATION_LOG, "") } catch {}
