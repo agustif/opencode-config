@@ -15,7 +15,7 @@
   "dependencies": {
     "@opencode-ai/plugin": "^1.17.13",
     "ajv": "^8.20.0",
-    "effect": "4.0.0-beta.93"
+    "effect": "4.0.0-beta.103"
   },
   "devDependencies": {
     "@types/node": "^22.0.0"
